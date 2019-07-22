@@ -32,11 +32,13 @@ class BatterySense(SystemCalcDelegate):
 				'/FirmwareFeatures/BolUBatAndTBatSense']),
 			('com.victronenergy.settings', [
 				'/Settings/SystemSetup/SharedVoltageSense',
+				'/Settings/SystemSetup/MultiHasVsense'
 				'/Settings/Services/Bol'])]
 
 	def get_settings(self):
 		return [
 			('vsense', "/Settings/SystemSetup/SharedVoltageSense", 1, 0, 0),
+			('multihasvsense', '/Settings/SystemSetup/MultiHasVsense', 0, 0, 0),
 			('tsense', "/Settings/SystemSetup/SharedTemperatureSense", 1, 0, 0),
 			('bol', '/Settings/Services/Bol', 0, 0, 1)
 		]
@@ -46,6 +48,10 @@ class BatterySense(SystemCalcDelegate):
 		self._dbusservice.add_path('/Control/SolarChargerVoltageSense', value=0)
 		self._dbusservice.add_path('/Control/SolarChargerTemperatureSense', value=0)
 		self._timer = gobject.timeout_add(3000, exit_on_error, self._on_timer)
+
+	@property
+	def multi_has_vsense(self):
+		return bool(self._settings['multihasvsense'])
 
 	def _on_timer(self):
 		self._dbusservice['/Control/SolarChargerVoltageSense'] = \
@@ -60,8 +66,8 @@ class BatterySense(SystemCalcDelegate):
 		return True
 
 	def _distribute_sense_voltage(self):
-		sense_voltage = self._dbusservice['/Dc/Battery/Voltage']
-		sense_voltage_service = self._dbusservice['/Dc/Battery/VoltageService']
+		sense_voltage = self._dbusservice['/Dc/Sense/Voltage']
+		sense_voltage_service = self._dbusservice['/Dc/Sense/Service']
 		if sense_voltage is None or sense_voltage_service is None:
 			return 0
 

@@ -425,3 +425,52 @@ class VoltageSenseTest(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatterySense/Temperature': 8}})
+
+	def test_multi_for_vsense(self):
+		self._set_setting('/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/SystemSetup/SharedVoltageSense', 1)
+		self._set_setting('/Settings/SystemSetup/MultiHasVsense', 1)
+
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/FirmwareFeatures/BolUBatAndTBatSense', 1)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/BatterySense/Voltage', None)
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.15,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2})
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
+			'/Link/TemperatureSense': None,
+			'/Dc/0/Voltage': 12.2,
+			'/Dc/0/Current': 9.7,
+			'/Dc/0/Temperature': None},
+			connection='VE.Direct')
+		self._update_values(5000)
+		self._check_values({
+			'/Control/SolarChargerVoltageSense': 1,
+			'/Dc/Battery/Voltage': 12.15, # From the battery service
+			'/Dc/Sense/Voltage': 12.25, # From VE.Bus
+			'/Dc/Sense/Service': 'com.victronenergy.vebus.ttyO1',
+			'/Dc/Battery/VoltageService': 'com.victronenergy.battery.ttyO2'
+		})
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/VoltageSense': 12.25}}) # Use the one from VE.Bus
+
+		self._set_setting('/Settings/SystemSetup/MultiHasVsense', 0)
+		self._update_values(5000)
+		self._check_values({
+			'/Control/SolarChargerVoltageSense': 1,
+			'/Dc/Battery/Voltage': 12.15, # From the battery service
+			'/Dc/Sense/Voltage': 12.15, # Also from battery
+			'/Dc/Sense/Service': 'com.victronenergy.battery.ttyO2',
+			'/Dc/Battery/VoltageService': 'com.victronenergy.battery.ttyO2'
+		})
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/VoltageSense': 12.15}}) # Use the one from the battery

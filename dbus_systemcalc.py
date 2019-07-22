@@ -250,6 +250,8 @@ class SystemCalc:
 			'/Dc/Vebus/Current': {'gettext': '%.1F A'},
 			'/Dc/Vebus/Power': {'gettext': '%.0F W'},
 			'/Dc/System/Power': {'gettext': '%.0F W'},
+			'/Dc/Sense/Voltage': {'gettext': '%.2F V'},
+			'/Dc/Sense/Service': {'gettext': '%s'},
 			'/Ac/ActiveIn/Source': {'gettext': '%s'},
 			'/VebusService': {'gettext': '%s'}
 		}
@@ -399,6 +401,24 @@ class SystemCalc:
 
 		return None, None
 
+	def _determine_sense_voltage(self, battery_service, vebus_service):
+		# Business Logic:
+		# 1. If Multi is used for vsense, try it first, then fall back to
+		# battery.
+		# 2. Otherwise use battery_service first (if it exists) and fall back
+		# to VE.Bus
+		if delegates.BatterySense.instance.multi_has_vsense:
+			c = (vebus_service, battery_service if battery_service != vebus_service else None)
+		else:
+			c = (battery_service, vebus_service if vebus_service != battery_service else None)
+		for service in c:
+			if service is None: continue
+			v = self._dbusmonitor.get_value(service, '/Dc/0/Voltage')
+			if v is not None:
+				return v, service
+
+		return None, None
+
 	# Called on a one second timer
 	def _handletimertick(self):
 		if self._changed:
@@ -522,6 +542,26 @@ class SystemCalc:
 		if vedirect_inverter is not None:
 			vedirect_inverter = vedirect_inverter[0]
 
+		# ==== Vebus ====
+		multi = self._get_service_having_lowest_instance('com.victronenergy.vebus')
+		multi_path = None
+		if multi is not None:
+			multi_path = multi[0]
+			dc_current = self._dbusmonitor.get_value(multi_path, '/Dc/0/Current')
+			newvalues['/Dc/Vebus/Current'] = dc_current
+			dc_power = self._dbusmonitor.get_value(multi_path, '/Dc/0/Power')
+			# Just in case /Dc/0/Power is not available
+			if dc_power == None and dc_current is not None:
+				dc_voltage = self._dbusmonitor.get_value(multi_path, '/Dc/0/Voltage')
+				if dc_voltage is not None:
+					dc_power = dc_voltage * dc_current
+			# Note that there is also vebuspower, which is the total DC power summed over all multis.
+			# However, this value cannot be combined with /Dc/Multi/Current, because it does not make sense
+			# to add the Dc currents of all multis if they do not share the same DC voltage.
+			newvalues['/Dc/Vebus/Power'] = dc_power
+
+		newvalues['/VebusService'] = multi_path
+
 		# ==== BATTERY ====
 		if self._batteryservice is not None:
 			batteryservicetype = self._batteryservice.split('.')[2]
@@ -611,6 +651,10 @@ class SystemCalc:
 		self._dbusservice['/AutoSelectedTemperatureService'] = None if temperature_service is None else \
 			self._get_readable_service_name(temperature_service)
 
+		# Get a reference voltage and service
+		newvalues['/Dc/Sense/Voltage'], newvalues['/Dc/Sense/Service'] = \
+			self._determine_sense_voltage(self._batteryservice, multi_path)
+
 		# ==== SYSTEM POWER ====
 		if self._settings['hasdcsystem'] == 1 and batteryservicetype == 'battery':
 			# Calculate power being generated/consumed by not measured devices in the network.
@@ -629,26 +673,6 @@ class SystemCalc:
 
 		elif self._settings['hasdcsystem'] == 1 and solarchargers_loadoutput_power is not None:
 			newvalues['/Dc/System/Power'] = solarchargers_loadoutput_power
-
-		# ==== Vebus ====
-		multi = self._get_service_having_lowest_instance('com.victronenergy.vebus')
-		multi_path = None
-		if multi is not None:
-			multi_path = multi[0]
-			dc_current = self._dbusmonitor.get_value(multi_path, '/Dc/0/Current')
-			newvalues['/Dc/Vebus/Current'] = dc_current
-			dc_power = self._dbusmonitor.get_value(multi_path, '/Dc/0/Power')
-			# Just in case /Dc/0/Power is not available
-			if dc_power == None and dc_current is not None:
-				dc_voltage = self._dbusmonitor.get_value(multi_path, '/Dc/0/Voltage')
-				if dc_voltage is not None:
-					dc_power = dc_voltage * dc_current
-			# Note that there is also vebuspower, which is the total DC power summed over all multis.
-			# However, this value cannot be combined with /Dc/Multi/Current, because it does not make sense
-			# to add the Dc currents of all multis if they do not share the same DC voltage.
-			newvalues['/Dc/Vebus/Power'] = dc_power
-
-		newvalues['/VebusService'] = multi_path
 
 		# ===== AC IN SOURCE =====
 		ac_in_source = None
