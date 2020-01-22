@@ -54,12 +54,18 @@ def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed
 	    thing with an 8-to-15 cell ratio, +-3.45V per cell.
 	"""
 	# Use 3.45V per cell, 52V for 48V batteries and 27.6V for 24V batteries.
-	target = 52.0 if charge_voltage > 30 else 27.6
-
-	# Hold at target, but allow the battery to call for a lower voltage.
-	# This also handles the case where charge_voltage == None, since None
-	# is always smaller than anything else.
-	return (min(charge_voltage, target), charge_current, feedback_allowed)
+	if charge_voltage > 30:
+		# 48V battery (15 cells)
+		return (min(charge_voltage, 52.0), charge_current, feedback_allowed)
+	else:
+		# 24V battery (8 cells). 24V batteries send CCL=0 when they are full,
+		# whereas the 48V batteries reduce CCL by 50% when the battery is full.
+		# Do the same for 24V batteries. The normal limit is C/2, so put the
+		# limit to C/4. Note that this is just a nicety, the important part is
+		# to clip the charge voltage to 27.6 volts. That fixes the sawtooth
+		# issue.
+		capacity = bms.capacity or 55
+		return (min(charge_voltage, 27.6), max(charge_current, round(capacity/4.0)), feedback_allowed)
 
 # Quirk = namedtuple('Quirk', ['product_id', 'floatvoltage', 'floatcurrent'])
 QUIRKS = {
@@ -413,6 +419,11 @@ class Battery(object):
 		""" Returns Product ID of battery. """
 		return self.monitor.get_value(self.service, '/ProductId')
 
+	@property
+	def capacity(self):
+		""" Capacity of battery, if defined. """
+		return self.monitor.get_value(self.service, '/InstalledCapacity')
+
 
 class BatterySubsystem(object):
 	""" Encapsulates multiple battery services. We may have both a BMV and a
@@ -576,7 +587,8 @@ class Dvcc(SystemCalcDelegate):
 				'/Info/BatteryLowVoltage',
 				'/Info/MaxChargeCurrent',
 				'/Info/MaxChargeVoltage',
-				'/Info/MaxDischargeCurrent']),
+				'/Info/MaxDischargeCurrent',
+				'/InstalledCapacity']),
 			('com.victronenergy.vebus', [
 				'/Ac/ActiveIn/Connected',
 				'/Hub/ChargeVoltage',
