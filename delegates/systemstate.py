@@ -1,5 +1,6 @@
 # Victron packages
 
+import six
 import sc_utils
 from delegates.base import SystemCalcDelegate
 from delegates.schedule import ScheduledCharging
@@ -93,9 +94,9 @@ class SystemState(SystemCalcDelegate):
 
 		if vebus is None:
 			# Look for a VE.Direct inverter
-			inverters = self._dbusmonitor.get_service_list('com.victronenergy.inverter').keys()
-			if inverters:
-				return (self._dbusmonitor.get_value(inverters[0], '/State'), flags)
+			inverter = six.next(iter(self._dbusmonitor.get_service_list('com.victronenergy.inverter').keys()), None)
+			if inverter is not None:
+				return (self._dbusmonitor.get_value(inverter, '/State'), flags)
 
 			# This could also be because a VEBUS BMS turned the inverter off.
 			# Unfortunately we will never know. Just admit we don't know.
