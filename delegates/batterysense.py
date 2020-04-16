@@ -1,5 +1,5 @@
 from collections import namedtuple
-import gobject
+from gobjectwrapper import gobject
 from dbus.exceptions import DBusException
 from delegates.base import SystemCalcDelegate
 from delegates.dvcc import Dvcc
